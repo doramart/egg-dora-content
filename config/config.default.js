@@ -122,8 +122,7 @@ exports.doraContent = {
     initData: 'contents.json', // 初始化数据脚本
     pluginsConfig: ` 
     exports.doraContent = {\n
-        enable: true,\n
-        \n
+        enable: true,\n        package: 'egg-dora-content',
     };\n
     `, // 插入到 plugins.js 中的配置
     defaultConfig: `
