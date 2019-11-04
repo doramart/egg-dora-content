@@ -6,7 +6,6 @@ const {
     validatorUtil
 } = require('../../utils');
 const validator = require('validator');
-const qr = require('qr-image')
 
 
 let ContentController = {
@@ -795,23 +794,6 @@ let ContentController = {
                 message: err
             });
 
-        }
-
-    },
-
-    async getContentQr(ctx, app) {
-
-
-        let detailLink = ctx.query.detailLink;
-        if (detailLink) {
-            let img = qr.image(detailLink, {
-                size: 10
-            });
-            ctx.set('Content-Type', 'image/png');
-            ctx.status = 200;
-            img.pipe(res);
-        } else {
-            throw new Error(ctx.__('validate_error_params'));
         }
 
     },
