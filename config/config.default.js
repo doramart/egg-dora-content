@@ -17,7 +17,7 @@ exports.doraContent = {
     isindex: 0, // 是否需要前台访问，1：需要，0：不需要,入口地址:'/ext/devteam/index/index'
     version: pkgInfo.version, // 版本号
     iconName: 'icon_doc_fill', // 主菜单图标名称
-    adminUrl: 'https://cdn.html-js.cn/cms/plugins/static/admin/content/js/app.js',
+    adminUrl: '/content/js/app.js',
     adminApi: [{
         url: 'content/getList',
         method: 'get',
@@ -58,6 +58,11 @@ exports.doraContent = {
         method: 'post',
         controllerName: 'redictContentToUsers',
         details: '分配用户',
+    }, {
+        url: 'content/updateContentEditor',
+        method: 'post',
+        controllerName: 'updateContentEditor',
+        details: '绑定编辑',
     }],
     fontApi: [{
         url: 'content/getMyFavoriteContents',
@@ -108,11 +113,6 @@ exports.doraContent = {
         details: '更新文档',
         authToken: true
     }, {
-        url: 'content/qrImg',
-        method: 'get',
-        controllerName: 'getContentQr',
-        details: '获取文档二维码',
-    }, {
         url: 'content/getNearbyContent',
         method: 'get',
         controllerName: 'getNearbyContent',
@@ -122,8 +122,7 @@ exports.doraContent = {
     initData: 'contents.json', // 初始化数据脚本
     pluginsConfig: ` 
     exports.doraContent = {\n
-        enable: true,\n
-        \n
+        enable: true,\n        package: 'egg-dora-content',
     };\n
     `, // 插入到 plugins.js 中的配置
     defaultConfig: `
