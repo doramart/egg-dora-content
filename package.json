@@ -1,6 +1,6 @@
 {
   "name": "egg-dora-content",
-  "version": "1.0.2",
+  "version": "1.0.13",
   "description": "content",
   "eggPlugin": {
     "name": "doraContent"
@@ -11,7 +11,10 @@
     "egg-plugin"
   ],
   "dependencies": {
+    "stream-wormhole": "^1.1.0",
+    "await-stream-ready": "^1.0.1",
     "shortid": "^2.2.14",
+    "mammoth": "^1.4.9",
     "moment": "^2.24.0",
     "lodash": "^4.17.15",
     "xss": "^1.0.6",
@@ -19,7 +22,7 @@
     "validator": "^11.1.0",
     "egg-dora-reguser": "^1.0.0",
     "egg-dora-contentcategory": "^1.0.0",
-    "egg-dora-contenttag": "^1.0.0"
+    "egg-dora-contenttags": "^1.0.0"
   },
   "devDependencies": {
     "autod": "^3.0.1",
@@ -57,7 +60,7 @@
     "url": "git+https://github.com/doramart/egg-dora-content.git"
   },
   "bugs": {
-    "url": "https://github.com/doramart/egg/issues"
+    "url": "https://github.com/doramart/egg-dora-content/issues"
   },
   "homepage": "https://github.com/doramart/egg-dora-content#readme",
   "author": "doramart",
