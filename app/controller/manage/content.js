@@ -43,6 +43,47 @@ const contentRule = (ctx) => {
 }
 
 
+const renderContentTags = async (ctx, fieldTags) => {
+    let newTagArr = [];
+    if (!_.isEmpty(fieldTags) && typeof fieldTags == 'object') {
+        for (const tagItem of fieldTags) {
+            let targetItem;
+            if (shortid.isValid(tagItem)) {
+                targetItem = await ctx.service.contentTag.item(ctx, {
+                    query: {
+                        _id: tagItem
+                    }
+                });
+            }
+            if (_.isEmpty(targetItem)) {
+
+                let thisItem = await ctx.service.contentTag.item(ctx, {
+                    query: {
+                        name: tagItem
+                    }
+                });
+
+                if (!_.isEmpty(thisItem)) {
+                    newTagArr.push(thisItem._id);
+                } else {
+                    let newTag = await ctx.service.contentTag.create({
+                        name: tagItem,
+                        comments: tagItem
+                    });
+                    newTagArr.push(newTag._id);
+                }
+
+            } else {
+                newTagArr.push(tagItem);
+            }
+        }
+    }
+
+    if (_.isEmpty(newTagArr)) {
+        newTagArr = fieldTags;
+    }
+    return newTagArr
+}
 
 let ContentController = {
 
@@ -52,15 +93,19 @@ let ContentController = {
 
             let payload = ctx.query;
             let state = ctx.query.state;
-            let userId = ctx.query.userId;
+            let uAuthor = ctx.query.uAuthor;
+            let categories = ctx.query.categories;
 
             let queryObj = {};
 
             if (state) {
                 queryObj.state = state
             }
-            if (userId) {
-                queryObj.uAuthor = userId;
+            if (uAuthor) {
+                queryObj.uAuthor = uAuthor;
+            }
+            if (categories) {
+                queryObj.categories = categories;
             }
 
             let contentList = await ctx.service.content.find(payload, {
@@ -118,13 +163,15 @@ let ContentController = {
                 }
             }
 
+            let newTagArr = await renderContentTags(ctx, fields.tags);
+
             const formObj = {
                 title: fields.title,
                 stitle: fields.stitle,
                 type: fields.type,
                 categories: fields.categories,
                 sortPath: fields.sortPath,
-                tags: fields.tags,
+                tags: newTagArr,
                 keywords: targetKeyWords,
                 sImg: fields.sImg,
                 author: !_.isEmpty(ctx.session.adminUserInfo) ? ctx.session.adminUserInfo._id : '',
@@ -139,9 +186,7 @@ let ContentController = {
             }
 
 
-            ctx.validate(contentRule(ctx), formObj);;
-
-
+            ctx.validate(contentRule(ctx), formObj);
 
             // 设置显示模式
             let checkInfo = siteFunc.checkContentType(formObj.simpleComments);
@@ -213,8 +258,6 @@ let ContentController = {
     // 文章推荐
     async updateContentToTop(ctx, app) {
 
-
-
         try {
 
             let fields = ctx.request.body || {};
@@ -238,8 +281,6 @@ let ContentController = {
 
     // 文章置顶
     async roofPlacement(ctx, app) {
-
-
 
         try {
 
@@ -300,17 +341,19 @@ let ContentController = {
 
     async update(ctx, app) {
 
-
         try {
 
             let fields = ctx.request.body || {};
+
+            let newTagArr = await renderContentTags(ctx, fields.tags);
+
             const formObj = {
                 title: fields.title,
                 stitle: fields.stitle,
                 type: fields.type,
                 categories: fields.categories,
                 sortPath: fields.sortPath,
-                tags: fields.tags,
+                tags: newTagArr,
                 keywords: fields.keywords ? (fields.keywords).split(',') : [],
                 sImg: fields.sImg,
                 author: !_.isEmpty(ctx.session.adminUserInfo) ? ctx.session.adminUserInfo._id : '',
@@ -324,10 +367,7 @@ let ContentController = {
                 type: fields.type
             }
 
-
             ctx.validate(contentRule(ctx), formObj);
-
-
 
             // 设置显示模式
             let checkInfo = siteFunc.checkContentType(formObj.simpleComments);
@@ -347,6 +387,72 @@ let ContentController = {
             }
 
             await ctx.service.content.update(ctx, fields._id, formObj);
+
+            ctx.helper.renderSuccess(ctx);
+
+        } catch (err) {
+
+            ctx.helper.renderFail(ctx, {
+                message: err
+            });
+
+        }
+
+    },
+
+
+    async updateContentEditor(ctx, app) {
+
+        try {
+
+            let fields = ctx.request.body || {};
+            const formObj = {
+                targetEditor: fields.targetUser,
+            }
+
+            let oldUser = await ctx.service.user.item(ctx, {
+                query: {
+                    _id: fields.targetUser
+                }
+            });
+
+            if (_.isEmpty(oldUser)) {
+                throw new Error(ctx.__('validate_error_params'));
+            }
+
+            let adminUserInfo = ctx.session.adminUserInfo;
+
+            await ctx.service.adminUser.update(ctx, adminUserInfo._id, formObj);
+
+            ctx.helper.renderSuccess(ctx);
+
+        } catch (err) {
+
+            ctx.helper.renderFail(ctx, {
+                message: err
+            });
+
+        }
+
+    },
+
+    async moveCate(ctx, app) {
+
+        try {
+
+            let fields = ctx.request.body || {};
+
+            if (!fields.ids || !fields.categories) {
+                throw new Error(ctx.__('validate_error_params'));
+            }
+            let targetIds = (fields.ids).split(',');
+            for (const contentId of targetIds) {
+
+                await ctx.service.content.update(ctx, contentId, {
+                    categories: fields.categories
+                });
+
+            }
 
             ctx.helper.renderSuccess(ctx);
 
