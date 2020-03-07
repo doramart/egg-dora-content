@@ -35,6 +35,11 @@ module.exports = app => {
             type: String,
             default: "/upload/images/defaultImg.jpg"
         }, // 文章小图
+        sImgType: {
+            type: String,
+            default: '2'
+        }, // 首图类型 1：自动生成 2：本地上传
+        cover: String, // 封面id
         videoImg: {
             type: String,
             default: ""
