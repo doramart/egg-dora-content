@@ -2,7 +2,7 @@
  * @Author: doramart 
  * @Date: 2019-06-24 13:20:49 
  * @Last Modified by: doramart
- * @Last Modified time: 2019-09-25 17:39:54
+ * @Last Modified time: 2020-05-04 11:11:33
  */
 
 'use strict';
@@ -34,7 +34,13 @@ class ContentService extends Service {
         populate = [],
         files = null
     } = {}) {
-
+        if ((this.ctx.originalUrl).indexOf('/manage/content/') != 0) {
+            Object.assign(query, {
+                draft: {
+                    $ne: '1'
+                }
+            });
+        }
         let listdata = _list(this.ctx.model.Content, payload, {
             files: files,
             query: query,
@@ -79,8 +85,8 @@ class ContentService extends Service {
         return _removes(res, this.ctx.model.Content, values, key);
     }
 
-    async safeDelete(res, values) {
-        return _safeDelete(res, this.ctx.model.Content, values);
+    async safeDelete(res, values, updateObj = {}) {
+        return _safeDelete(res, this.ctx.model.Content, values, updateObj);
     }
 
     async update(res, _id, payload) {
@@ -127,6 +133,27 @@ class ContentService extends Service {
         })
     }
 
+    async aggregateCounts(key, typeId) {
+        return this.ctx.model.Content.aggregate([{
+            $match: {
+                [key]: typeId
+            }
+        }, {
+            $group: {
+                _id: '$_id',
+                'sum': {
+                    $sum: 1
+                }
+            }
+        }, {
+            $group: {
+                _id: null,
+                total_sum: {
+                    '$sum': '$sum'
+                }
+            }
+        }])
+    }
 
 }
 
