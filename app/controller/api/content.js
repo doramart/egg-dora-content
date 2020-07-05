@@ -6,8 +6,13 @@ const {
     validatorUtil
 } = require('../../utils');
 const validator = require('validator');
-const qr = require('qr-image')
+const fs = require('fs');
+const path = require('path');
 
+const awaitStreamReady = require('await-stream-ready').write;
+const sendToWormhole = require('stream-wormhole');
+const mammoth = require("mammoth");
+const moment = require("moment");
 
 let ContentController = {
 
@@ -163,12 +168,6 @@ let ContentController = {
             })
 
             let queryCate = enableCates.map((item, index) => {
-                const reg = new RegExp(item.id, 'i')
-                // return {
-                //     categories: {
-                //         $regex: reg
-                //     }
-                // }
                 return item.id;
             })
             return queryCate;
@@ -178,6 +177,47 @@ let ContentController = {
         }
     },
 
+    // 根据类别id获取文档数量
+    async getContentCountsByCateId(ctx, app) {
+
+        let typeId = ctx.query.typeId;
+
+        if (!shortid.isValid(typeId)) {
+            throw new Error(ctx.__('validate_error_params'));
+        }
+
+        let result = await ctx.service.content.aggregateCounts('categories', typeId);
+
+        try {
+            ctx.helper.renderSuccess(ctx, {
+                data: result
+            });
+        } catch (error) {
+            ctx.helper.renderFail(ctx, {
+                message: error
+            });
+        }
+
+    },
+
+    // 获取热门标签Id列表
+    async getHotTagIds(ctx, app) {
+
+        let payload = ctx.query;
+
+        let result = await ctx.service.content.getHotTagIds(payload);
+
+        try {
+            ctx.helper.renderSuccess(ctx, {
+                data: result
+            });
+        } catch (error) {
+            ctx.helper.renderFail(ctx, {
+                message: error
+            });
+        }
+
+    },
 
     async list(ctx, app) {
 
@@ -193,6 +233,7 @@ let ContentController = {
             let tagName = ctx.query.tagName;
             let filesType = 'normal'; // 查询模式 full/normal/simple
             let isSingerPage = false; // 是否是单页面
+            let targetUser;
 
             let queryObj = {
                     state: '2'
@@ -225,7 +266,6 @@ let ContentController = {
                 }
             }
 
-
             if (sortby == '1') { // 按点击量排序
                 delete sortObj.date;
                 delete sortObj.roofPlacement;
@@ -250,7 +290,16 @@ let ContentController = {
                     }
                 }
             } else {
-                userId && (queryObj.uAuthor = userId);
+                if (userId) {
+                    targetUser = await ctx.service.user.item(ctx, {
+                        query: {
+                            _id: userId
+                        }
+                    })
+                    if (!_.isEmpty(targetUser)) {
+                        queryObj.uAuthor = targetUser._id;
+                    }
+                }
             }
 
             if (typeId) {
@@ -268,11 +317,14 @@ let ContentController = {
                     filesType = 'stage1';
                     isSingerPage = true;
                     let ableCateList = await this.getEnableCateList(ctx, isSingerPage);
-                    _.assign(queryObj, {
-                        categories: {
-                            $in: ableCateList
-                        }
-                    });
+                    if (ableCateList.indexOf(typeId) < 0) {
+                        _.assign(queryObj, {
+                            categories: {
+                                $in: ableCateList
+                            }
+                        });
+                    }
+
                 }
             } else {
                 // 只查询可见分类的文章
@@ -284,7 +336,6 @@ let ContentController = {
                 });
             }
 
-            // console.log('--sortObj--', sortObj);
             let contentList = await ctx.service.content.find(payload, {
                 sort: sortObj,
                 query: queryObj,
@@ -293,7 +344,9 @@ let ContentController = {
             });
 
             contentList.docs = await this.renderContentList(ctx, userInfo._id, contentList.docs);
-
+            if (queryObj.uAuthor) {
+                contentList.author = targetUser;
+            }
             ctx.helper.renderSuccess(ctx, {
                 data: contentList
             });
@@ -424,7 +477,6 @@ let ContentController = {
         }
     },
 
-    // 获取随机文档
     async getRadomContents(ctx, app) {
 
         let payload = ctx.query;
@@ -465,8 +517,6 @@ let ContentController = {
 
 
     async getOneContent(ctx, app) {
-
-
 
         try {
             let targetId = ctx.query.id;
@@ -585,7 +635,6 @@ let ContentController = {
         }
     },
 
-
     async getMyFavoriteContents(ctx, app) {
 
         try {
@@ -628,7 +677,6 @@ let ContentController = {
         }
     },
 
-
     async addContent(ctx, app) {
 
 
@@ -656,7 +704,6 @@ let ContentController = {
                 tags: fields.tags,
                 keywords: targetKeyWords,
                 sImg: fields.sImg,
-                author: !_.isEmpty(ctx.session.adminUserInfo) ? ctx.session.adminUserInfo._id : '',
                 state: fields.state,
                 dismissReason: fields.dismissReason,
                 isTop: fields.isTop,
@@ -799,21 +846,217 @@ let ContentController = {
 
     },
 
-    async getContentQr(ctx, app) {
+    async getWordHtmlContent(ctx, app) {
+        try {
 
+            // 获取 steam
+            const stream = await ctx.getFileStream();
 
-        let detailLink = ctx.query.detailLink;
-        if (detailLink) {
-            let img = qr.image(detailLink, {
-                size: 10
+            // 上传基础目录
+            let uploadOptions = app.config.doraUploadFile.uploadFileFormat;
+            const uplaodBasePath = uploadOptions.upload_path + '/upload';
+            const dayStr = moment().format('YYYYMMDD');
+
+            if (!fs.existsSync(uplaodBasePath)) {
+                fs.mkdirSync(uplaodBasePath);
+            }
+            // 保存路径
+            let savePath = path.join(uplaodBasePath, 'file');
+            if (!fs.existsSync(savePath)) {
+                fs.mkdirSync(savePath);
+            }
+
+            savePath = path.join(uplaodBasePath, 'file', dayStr);
+            if (!fs.existsSync(savePath)) {
+                fs.mkdirSync(savePath);
+            }
+
+            // 生成文件名
+            var basename = path.basename(stream.filename);
+            basename = basename.substring(0, basename.lastIndexOf('.') - 1);
+
+            const filename = basename + '_' + Date.now() + '_' + Number.parseInt(Math.random() * 10000) + path.extname(stream.filename);
+
+            // 生成写入路径 
+            const target = path.join(savePath, filename);
+
+            // 写入流
+            const writeStream = fs.createWriteStream(target);
+
+            try {
+                // 写入文件
+                await awaitStreamReady(stream.pipe(writeStream));
+
+                savePath = path.join(uplaodBasePath, 'images');
+                if (!fs.existsSync(savePath)) {
+                    fs.mkdirSync(savePath);
+                }
+
+                savePath = path.join(uplaodBasePath, 'images', dayStr);
+                if (!fs.existsSync(savePath)) {
+                    fs.mkdirSync(savePath);
+                }
+
+                var options = {
+                    convertImage: mammoth.images.imgElement(function (image) {
+                        var fileType = image.contentType.toLowerCase();
+                        fileType = fileType.substring(fileType.indexOf('/') + 1);
+
+                        const imageName = Date.now() + '' + Number.parseInt(Math.random() * 10000) + "." + fileType;
+                        const imageFullName = path.join(savePath, imageName);
+
+                        return image.read("base64").then(async function (imageBuffer) {
+                            var dataBuffer = new Buffer(imageBuffer, 'base64');
+                            fs.writeFileSync(imageFullName, dataBuffer, "binary");
+                            let resultPath = `${app.config.static.prefix}/upload/images/${dayStr}/${imageName}`;
+                            let uploadResult = await ctx.helper.reqJsonData('upload/filePath', {
+                                imgPath: resultPath,
+                                localImgPath: imageFullName,
+                                filename: imageName
+                            }, "post");
+                            // console.log('---uploadResult--', uploadResult);
+                            return {
+                                src: uploadResult.path
+                            };
+                        });
+                    })
+                };
+
+                var result = await mammoth.convertToHtml({
+                    path: target
+                }, options);
+
+                var html = result.value;
+
+                ctx.helper.renderSuccess(ctx, {
+                    data: html
+                });
+
+            } catch (err) {
+                // 必须将上传的文件流消费掉，要不然浏览器响应会卡死
+                await sendToWormhole(stream);
+                throw err;
+            }
+        } catch (err) {
+            ctx.helper.renderFail(ctx, {
+                message: err
             });
-            ctx.set('Content-Type', 'image/png');
-            ctx.status = 200;
-            img.pipe(res);
-        } else {
-            throw new Error(ctx.__('validate_error_params'));
+        }
+    },
+
+    // 获取封面背景图列表
+    async getContentCoverList(ctx, app) {
+
+        try {
+
+            let queryObj = ctx.query || {};
+            let coverList = await ctx.helper.reqJsonData(app.config.doracms_api + '/api/contentCover/getList', queryObj);
+
+            ctx.helper.renderSuccess(ctx, {
+                data: coverList
+            });
+
+        } catch (err) {
+
+            ctx.helper.renderFail(ctx, {
+                message: err
+            });
+
         }
 
+    },
+
+    // 获取单个封面信息
+    async getOneContentCover(ctx, app) {
+
+        try {
+
+            let queryObj = ctx.query || {};
+            let coverObj = await ctx.helper.reqJsonData(app.config.doracms_api + '/api/contentCover/getOne', queryObj);
+
+            ctx.helper.renderSuccess(ctx, {
+                data: coverObj
+            });
+
+        } catch (err) {
+
+            ctx.helper.renderFail(ctx, {
+                message: err
+            });
+
+        }
+
+    },
+
+
+    // 获取封面背景图类别列表
+    async getContentCoverTypeList(ctx, app) {
+
+        try {
+
+            let payload = {};
+            let coverTypeList = await ctx.helper.reqJsonData(app.config.doracms_api + '/api/coverType/getList', payload);
+
+            ctx.helper.renderSuccess(ctx, {
+                data: coverTypeList
+            });
+
+        } catch (err) {
+
+            ctx.helper.renderFail(ctx, {
+                message: err
+            });
+
+        }
+
+    },
+
+    // 上传base64合成后的背景图
+    async uploadPreviewImgByBase64(ctx, app) {
+
+        try {
+
+            let fields = ctx.request.body || {};
+            if (!fields.base64) {
+                throw new Error(ctx.__('validate_error_params'));
+            }
+
+            let uploadOptions = app.config.doraUploadFile.uploadFileFormat;
+            const uplaodBasePath = uploadOptions.upload_path + '/upload';
+            const dayStr = moment().format('YYYYMMDD');
+
+            let savePath = path.join(uplaodBasePath, 'images');
+            if (!fs.existsSync(savePath)) {
+                fs.mkdirSync(savePath);
+            }
+
+            savePath = path.join(uplaodBasePath, 'images', dayStr);
+            if (!fs.existsSync(savePath)) {
+                fs.mkdirSync(savePath);
+            }
+
+            const imageName = Date.now() + '' + Number.parseInt(Math.random() * 10000) + ".png";
+            const imageFullName = path.join(savePath, imageName);
+
+            var dataBuffer = new Buffer(fields.base64, 'base64');
+
+            fs.writeFileSync(imageFullName, dataBuffer, "binary");
+            let resultPath = `${app.config.static.prefix}/upload/images/${dayStr}/${imageName}`;
+            let uploadResult = await ctx.helper.reqJsonData('upload/filePath', {
+                imgPath: resultPath,
+                localImgPath: imageFullName,
+                filename: imageName
+            }, "post");
+
+            ctx.helper.renderSuccess(ctx, {
+                data: uploadResult.path
+            });
+
+        } catch (err) {
+            ctx.helper.renderFail(ctx, {
+                message: err
+            });
+        }
     },
 
     // 随机获取图片
